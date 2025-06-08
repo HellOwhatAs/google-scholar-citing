@@ -12,12 +12,13 @@ import urllib.parse
 import tkinter as tk
 from tkinter import messagebox
 
-tk.Tk().withdraw()
+root = tk.Tk()
+root.wm_attributes("-topmost", 1)
+root.withdraw()
 
 
-def show_messages():
-    while not messagebox.askyesno("人机验证", "人机验证做好了吗？"):
-        ...
+def show_messages(msg: str = "队友呢队友呢，救一下啊"):
+    messagebox.showinfo("来人啊", msg, parent=root)
 
 
 options = Options()
@@ -29,6 +30,11 @@ browser.implicitly_wait(30)
 @pyfilecache.file_cache
 def published_papers(user_id: str):
     browser.get(f"https://scholar.google.com/citations?user={user_id}")
+
+    soup = BeautifulSoup(browser.page_source, "lxml")
+    while soup.select_one("#gsc_prf_i") is None:
+        show_messages()
+        soup = BeautifulSoup(browser.page_source, "lxml")
 
     more_button = browser.find_element(By.ID, "gsc_bpf_more")
     while more_button.get_attribute("disabled") is None:
@@ -66,13 +72,13 @@ def next_page_url(url: str, step: int = 10):
 @pyfilecache.file_cache
 def get_cur_citing_papers(current_url: str):
     browser.get(current_url)
-    page_source = browser.page_source
-    if "进行人机身份验证" in page_source or "存在异常流量" in page_source:
+
+    soup = BeautifulSoup(browser.page_source, "lxml")
+    while soup.select_one("#gs_res_ccl_mid") is None:
         show_messages()
-        page_source = browser.page_source
+        soup = BeautifulSoup(browser.page_source, "lxml")
 
     res = []
-    soup = BeautifulSoup(page_source, "lxml")
     papers = soup.select("#gs_res_ccl_mid > div")
     for paper in papers:
         a_paper = paper.select_one("div.gs_ri > h3 > a")
@@ -107,25 +113,26 @@ def func_cited_paper(citing_href: str):
     return citing_papers
 
 
-citing_hrefs = published_papers("mbGafk4AAAAJ")
-citing_papers = []
-for citing_href in citing_hrefs:
-    href = citing_href["href"]
-    if not href:
-        continue
+if __name__ == "__main__":
+    citing_hrefs = published_papers("mbGafk4AAAAJ")
+    citing_papers = []
+    for citing_href in citing_hrefs:
+        href = citing_href["href"]
+        if not href:
+            continue
 
-    count, citing = citing_href["count"], func_cited_paper(href)
+        count, citing = citing_href["count"], func_cited_paper(href)
 
-    if int(count) != len(citing):
-        print(f"Warning: {href} count {count} != {len(citing)}. Retrying...")
-        os.remove(func_cited_paper.fp(href))
-        get_cur_citing_papers.clear()
-        citing = func_cited_paper(href)
+        if int(count) != len(citing):
+            print(f"Warning: {href} count {count} != {len(citing)}. Retrying...")
+            os.remove(func_cited_paper.fp(href))
+            get_cur_citing_papers.clear()
+            citing = func_cited_paper(href)
 
-    citing_papers.append((count, href, citing))
-print(f"Get {sum(len(i) for _, _, i in citing_papers)} citing papers in total.")
+        citing_papers.append((count, href, citing))
+    print(f"Get {sum(len(i) for _, _, i in citing_papers)} citing papers in total.")
 
-browser.quit()
+    browser.quit()
 
-with open("citing_papers.json", "w", encoding="utf-8") as f:
-    json.dump(citing_papers, f, ensure_ascii=False, indent=4)
+    with open("citing_papers.json", "w", encoding="utf-8") as f:
+        json.dump(citing_papers, f, ensure_ascii=False, indent=4)

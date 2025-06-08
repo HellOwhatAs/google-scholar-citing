@@ -11,5 +11,6 @@ dependencies = [
     "pyfilecache>=0.1.6",
     "requests>=2.32.3",
     "selenium>=4",
+    "tqdm>=4.67.1",
     "webdriver-manager>=4.0.2",
 ]
