@@ -38,20 +38,37 @@ def find_author(author_url: str):
     }
 
 
-with open("./citing_papers.json", "rb") as f:
-    citing_papers: list[
-        tuple[str, str, str | dict[str, str | list[dict[str, str]]]]
-    ] = json.load(f)
+if __name__ == "__main__":
+    with open("./citing_papers.json", "rb") as f:
+        citing_papers: list[
+            tuple[str, str, str | dict[str, str | list[dict[str, str]]]]
+        ] = json.load(f)
 
-citing_authors = sorted(
-    set(
-        urllib.parse.urljoin("https://scholar.google.com", author["href"])
-        for _, _, papers in citing_papers
-        for paper in papers
-        if not isinstance(paper, str)
-        for author in paper["authors"]
+    citing_authors = sorted(
+        set(
+            urllib.parse.urljoin("https://scholar.google.com", author["href"])
+            for _, _, papers in citing_papers
+            for paper in papers
+            if not isinstance(paper, str)
+            for author in paper["authors"]
+        )
     )
-)
 
-for author_url in tqdm(citing_authors):
-    find_author(author_url)
+    status404 = {
+        "https://scholar.google.com/citations?user=MD61m08AAAAJ&hl=zh-CN&oi=sra",
+    }
+
+    citing_authors_result = {}
+    for author_url in tqdm(citing_authors):
+        if author_url in status404:
+            continue
+
+        citing_authors_result[
+            {
+                i[: i.find("=")]: i[i.find("=") + 1 :]
+                for i in urllib.parse.urlparse(author_url).query.split("&")
+            }["user"]
+        ] = find_author(author_url)
+
+    with open("./citing_authors.json", "w", encoding="utf-8") as f:
+        json.dump(citing_authors_result, f, ensure_ascii=False, indent=4)
