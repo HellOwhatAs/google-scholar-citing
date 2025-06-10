@@ -11,3 +11,6 @@ wheels/
 
 __pyfilecache__/
 *.json
+*.bak
+*.dat
+*.dir

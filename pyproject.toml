@@ -3,6 +3,10 @@ name = "google-scholar-citing"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
+authors = [
+    { name = "HellOwhatAs", email = "xjq701229@outlook.com" }
+]
+
 requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.13.4",
