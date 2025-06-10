@@ -3,9 +3,7 @@ name = "google-scholar-citing"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-authors = [
-    { name = "HellOwhatAs", email = "xjq701229@outlook.com" }
-]
+authors = [{ name = "HellOwhatAs", email = "xjq701229@outlook.com" }]
 
 requires-python = ">=3.12"
 dependencies = [
@@ -18,3 +16,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "webdriver-manager>=4.0.2",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
