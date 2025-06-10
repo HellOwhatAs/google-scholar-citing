@@ -16,7 +16,3 @@ dependencies = [
     "tqdm>=4.67.1",
     "webdriver-manager>=4.0.2",
 ]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
