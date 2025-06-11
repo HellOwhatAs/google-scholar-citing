@@ -9,7 +9,13 @@ import urllib.parse
 import tkinter as tk
 from tkinter import messagebox
 from functools import partial
-from typing import Callable
+from typing import Callable, Optional
+from .types import (
+    DetailedAuthor,
+    PublishedPaper,
+    CitingPaper,
+    SearchedPaper,
+)
 
 
 def shelved_cache(func, path: str):
@@ -49,7 +55,7 @@ class default_page_error_handler:
         self.root.wm_attributes("-topmost", 1)
         self.root.withdraw()
 
-    def __call__(self, soup: BeautifulSoup):
+    def __call__(self, soup: BeautifulSoup) -> bool:
         return messagebox.askretrycancel(
             "来人啊",
             "队友呢队友呢，救一下啊",
@@ -90,7 +96,7 @@ class Scholar:
         self.browser.quit()
 
     @staticmethod
-    def _next_citing_page_url(url: str, step: int = 10):
+    def _next_citing_page_url(url: str, step: int = 10) -> str:
         parsed_url = urllib.parse.urlparse(url)
         queries = [
             [i[: i.find("=")], i[i.find("=") + 1 :]]
@@ -106,7 +112,7 @@ class Scholar:
             query="&".join([f"{k}={v}" for k, v in queries])
         ).geturl()
 
-    def get_page_soup(self, css_selector: str):
+    def get_page_soup(self, css_selector: str) -> Optional[BeautifulSoup]:
         reload_count = 0
         while True:
             page_source = self.browser.page_source
@@ -120,7 +126,7 @@ class Scholar:
                 reload_count += 1
                 time.sleep(self.reload_interval)
 
-    def get_published_papers(self, user_id: str):
+    def get_published_papers(self, user_id: str) -> Optional[list[PublishedPaper]]:
         self.browser.get(f"https://scholar.google.com/citations?user={user_id}")
         soup = self.get_page_soup("#gsc_prf_i")
         if soup is None:
@@ -153,11 +159,11 @@ class Scholar:
 
         return citing_hrefs
 
-    def _cur_citing_papers(self, current_url: str):
+    def _cur_citing_papers(self, current_url: str) -> list[CitingPaper]:
         self.browser.get(current_url)
         soup = self.get_page_soup("#gs_res_ccl_mid")
         if soup is None:
-            return None
+            return []
 
         res = []
         papers = soup.select("#gs_res_ccl_mid > div")
@@ -180,7 +186,7 @@ class Scholar:
             )
         return res
 
-    def get_citing_papers(self, citing_href: str):
+    def get_citing_papers(self, citing_href: str) -> list[CitingPaper]:
         citing_papers = []
         cur_url = citing_href
         while True:
@@ -191,7 +197,7 @@ class Scholar:
             cur_url = self._next_citing_page_url(cur_url)
         return citing_papers
 
-    def get_author(self, author_url: str):
+    def get_author(self, author_url: str) -> Optional[DetailedAuthor]:
         self.browser.get(author_url)
         soup = self.get_page_soup("#gsc_prf_i")
         if soup is None:
@@ -220,7 +226,7 @@ class Scholar:
             "url": author_url,
         }
 
-    def get_papers(self, title: str):
+    def get_papers(self, title: str) -> Optional[list[SearchedPaper]]:
         url = "https://scholar.google.com/scholar?hl=zh-CN&q=" + urllib.parse.quote(
             title
         )
