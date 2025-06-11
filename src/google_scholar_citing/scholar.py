@@ -1,8 +1,5 @@
-from selenium.webdriver import Edge as Driver
-from selenium.webdriver.edge.service import Service
-from selenium.webdriver.edge.options import Options
+from selenium.webdriver.chromium.webdriver import ChromiumDriver
 from selenium.webdriver.common.by import By
-from webdriver_manager.microsoft import EdgeChromiumDriverManager as DriverManager
 from bs4 import BeautifulSoup
 import time
 import shelve
@@ -12,9 +9,10 @@ import urllib.parse
 import tkinter as tk
 from tkinter import messagebox
 from functools import partial
+from typing import Callable
 
 
-def shelved_method_cache(func, path: str):
+def shelved_cache(func, path: str):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         with shelve.open(path) as cache:
@@ -29,24 +27,50 @@ def shelved_method_cache(func, path: str):
     return wrapper
 
 
-class Scholar:
-    def __init__(self, cache_path: str = "__google-scholar-citing"):
-        self.cache_path = cache_path
+def default_webdriver() -> ChromiumDriver:
+    from selenium.webdriver import Edge as Driver
+    from selenium.webdriver.edge.service import Service
+    from selenium.webdriver.edge.options import Options
+    from webdriver_manager.microsoft import EdgeChromiumDriverManager as DriverManager
+
+    options = Options()
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    driver = Driver(
+        options=options,
+        service=Service(DriverManager().install()),
+    )
+    driver.implicitly_wait(30)
+    return driver
+
+
+class default_page_error_handler:
+    def __init__(self):
         self.root = tk.Tk()
         self.root.wm_attributes("-topmost", 1)
         self.root.withdraw()
 
-        options = Options()
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        self.browser = Driver(
-            options=options,
-            service=Service(DriverManager().install()),
+    def __call__(self, source: str):
+        return messagebox.askretrycancel(
+            "来人啊",
+            "队友呢队友呢，救一下啊",
+            parent=self.root,
         )
-        self.browser.implicitly_wait(30)
 
-        cache_func = partial(shelved_method_cache, path=self.cache_path)
+
+class Scholar:
+    def __init__(
+        self,
+        page_error_handler: Callable[[str], bool] = default_page_error_handler(),
+        webdriver: ChromiumDriver = None,
+        cache_path: str = "__google-scholar-citing",
+    ):
+        self.cache_path = cache_path
+        self.page_error_handler = page_error_handler
+        self.browser = default_webdriver() if webdriver is None else webdriver
+
+        cache_func = partial(shelved_cache, path=self.cache_path)
         self.get_published_papers = cache_func(self.get_published_papers)
-        self.cur_citing_papers = cache_func(self.cur_citing_papers)
+        self._cur_citing_papers = cache_func(self._cur_citing_papers)
         self.get_author = cache_func(self.get_author)
         self.get_papers = cache_func(self.get_papers)
 
@@ -76,17 +100,15 @@ class Scholar:
             query="&".join([f"{k}={v}" for k, v in queries])
         ).geturl()
 
-    def show_messages(self, msg: str = "队友呢队友呢，救一下啊"):
-        return messagebox.askretrycancel("来人啊", msg, parent=self.root)
-
     def get_published_papers(self, user_id: str):
         self.browser.get(f"https://scholar.google.com/citations?user={user_id}")
 
         while True:
-            soup = BeautifulSoup(self.browser.page_source, "lxml")
+            page_source = self.browser.page_source
+            soup = BeautifulSoup(page_source, "lxml")
             if soup.select_one("#gsc_prf_i") is not None:
                 break
-            if not self.show_messages():
+            if not self.page_error_handler(page_source):
                 return None
 
         more_button = self.browser.find_element(By.ID, "gsc_bpf_more")
@@ -116,14 +138,15 @@ class Scholar:
 
         return citing_hrefs
 
-    def cur_citing_papers(self, current_url: str):
+    def _cur_citing_papers(self, current_url: str):
         self.browser.get(current_url)
 
         while True:
-            soup = BeautifulSoup(self.browser.page_source, "lxml")
+            page_source = self.browser.page_source
+            soup = BeautifulSoup(page_source, "lxml")
             if soup.select_one("#gs_res_ccl_mid") is not None:
                 break
-            if not self.show_messages():
+            if not self.page_error_handler(page_source):
                 return None
 
         res = []
@@ -151,7 +174,7 @@ class Scholar:
         citing_papers = []
         cur_url = citing_href
         while True:
-            cur_page: list = self.cur_citing_papers(cur_url)
+            cur_page: list = self._cur_citing_papers(cur_url)
             citing_papers.extend(cur_page)
             if len(cur_page) < 10:
                 break
@@ -162,10 +185,11 @@ class Scholar:
         self.browser.get(author_url)
 
         while True:
-            soup = BeautifulSoup(self.browser.page_source, "lxml")
+            page_source = self.browser.page_source
+            soup = BeautifulSoup(page_source, "lxml")
             if soup.select_one("#gsc_prf_i") is not None:
                 break
-            if not self.show_messages():
+            if not self.page_error_handler(page_source):
                 return None
 
         name = soup.select_one("#gsc_prf_in").text
@@ -198,24 +222,34 @@ class Scholar:
         self.browser.get(url)
 
         while True:
-            soup = BeautifulSoup(self.browser.page_source, "lxml")
+            page_source = self.browser.page_source
+            soup = BeautifulSoup(page_source, "lxml")
             if soup.select_one("#gs_res_ccl_mid") is not None:
                 break
-            if not self.show_messages():
+            if not self.page_error_handler(page_source):
                 return None
 
         result_papers: list[dict] = []
         for paper in soup.select("#gs_res_ccl_mid > div > div.gs_ri"):
             title_h3 = paper.select_one("h3.gs_rt")
             title_a = title_h3.select_one("a")
-            authors = [
-                {"name": author.text, "href": author.get("href")}
-                for author in (
-                    paper.select("div.gs_fmaa > a")
-                    or paper.select_one("h3.gs_rt").next_sibling.select("div > a")
-                )
-            ]
-            pdot = paper.select_one("span.gs_pdot")
+
+            if paper.select_one("div.gs_fmaa") is not None:
+                authors = [
+                    {"name": author.text, "href": author.get("href")}
+                    for author in paper.select("div.gs_fmaa > a")
+                ]
+                gs_fmaa = paper.select_one("div.gs_fmaa")
+                authors_raw = gs_fmaa.prettify()
+                metadata = [i.text for i in gs_fmaa.next_siblings]
+            else:
+                authors = [
+                    {"name": author.text, "href": author.get("href")}
+                    for author in paper.select("div.gs_a > a")
+                ]
+                authors_raw = paper.select_one("div.gs_a").prettify()
+                metadata = None
+
             cited_count: str = paper.select_one(
                 "div.gs_fl.gs_flb > a:nth-child(3)"
             ).text
@@ -225,11 +259,8 @@ class Scholar:
                     "title": title_h3.text,
                     "href": title_a.get("href") if title_a is not None else None,
                     "authors": authors,
-                    "metadata": (
-                        [pdot.previous_sibling.text, pdot.next_sibling.text]
-                        if pdot is not None
-                        else list(paper.select_one("div.gs_a").children)[-1]
-                    ),
+                    "authors_raw": authors_raw,
+                    "metadata": metadata,
                     "cited_count": cited_count,
                 }
             )
