@@ -49,7 +49,7 @@ class default_page_error_handler:
         self.root.wm_attributes("-topmost", 1)
         self.root.withdraw()
 
-    def __call__(self, source: str):
+    def __call__(self, soup: BeautifulSoup):
         return messagebox.askretrycancel(
             "来人啊",
             "队友呢队友呢，救一下啊",
@@ -60,13 +60,19 @@ class default_page_error_handler:
 class Scholar:
     def __init__(
         self,
-        page_error_handler: Callable[[str], bool] = default_page_error_handler(),
+        page_error_handler: Callable[
+            [BeautifulSoup], bool
+        ] = default_page_error_handler(),
         webdriver: ChromiumDriver = None,
         cache_path: str = "__google-scholar-citing",
+        auto_reload: int = 2,
+        reload_interval: float = 1.0,
     ):
         self.cache_path = cache_path
         self.page_error_handler = page_error_handler
         self.browser = default_webdriver() if webdriver is None else webdriver
+        self.auto_reload = auto_reload
+        self.reload_interval = reload_interval
 
         cache_func = partial(shelved_cache, path=self.cache_path)
         self.get_published_papers = cache_func(self.get_published_papers)
@@ -100,16 +106,25 @@ class Scholar:
             query="&".join([f"{k}={v}" for k, v in queries])
         ).geturl()
 
-    def get_published_papers(self, user_id: str):
-        self.browser.get(f"https://scholar.google.com/citations?user={user_id}")
-
+    def get_page_soup(self, css_selector: str):
+        reload_count = 0
         while True:
             page_source = self.browser.page_source
             soup = BeautifulSoup(page_source, "lxml")
-            if soup.select_one("#gsc_prf_i") is not None:
-                break
-            if not self.page_error_handler(page_source):
-                return None
+            if soup.select_one(css_selector) is not None:
+                return soup
+            if reload_count >= self.auto_reload:
+                if not self.page_error_handler(soup):
+                    return None
+            else:
+                reload_count += 1
+                time.sleep(self.reload_interval)
+
+    def get_published_papers(self, user_id: str):
+        self.browser.get(f"https://scholar.google.com/citations?user={user_id}")
+        soup = self.get_page_soup("#gsc_prf_i")
+        if soup is None:
+            return None
 
         more_button = self.browser.find_element(By.ID, "gsc_bpf_more")
         while more_button.get_attribute("disabled") is None:
@@ -140,14 +155,9 @@ class Scholar:
 
     def _cur_citing_papers(self, current_url: str):
         self.browser.get(current_url)
-
-        while True:
-            page_source = self.browser.page_source
-            soup = BeautifulSoup(page_source, "lxml")
-            if soup.select_one("#gs_res_ccl_mid") is not None:
-                break
-            if not self.page_error_handler(page_source):
-                return None
+        soup = self.get_page_soup("#gs_res_ccl_mid")
+        if soup is None:
+            return None
 
         res = []
         papers = soup.select("#gs_res_ccl_mid > div")
@@ -183,14 +193,9 @@ class Scholar:
 
     def get_author(self, author_url: str):
         self.browser.get(author_url)
-
-        while True:
-            page_source = self.browser.page_source
-            soup = BeautifulSoup(page_source, "lxml")
-            if soup.select_one("#gsc_prf_i") is not None:
-                break
-            if not self.page_error_handler(page_source):
-                return None
+        soup = self.get_page_soup("#gsc_prf_i")
+        if soup is None:
+            return None
 
         name = soup.select_one("#gsc_prf_in").text
 
@@ -220,14 +225,9 @@ class Scholar:
             title
         )
         self.browser.get(url)
-
-        while True:
-            page_source = self.browser.page_source
-            soup = BeautifulSoup(page_source, "lxml")
-            if soup.select_one("#gs_res_ccl_mid") is not None:
-                break
-            if not self.page_error_handler(page_source):
-                return None
+        soup = self.get_page_soup("#gs_res_ccl_mid")
+        if soup is None:
+            return None
 
         result_papers: list[dict] = []
         for paper in soup.select("#gs_res_ccl_mid > div > div.gs_ri"):
